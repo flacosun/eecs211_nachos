@@ -71,7 +71,7 @@ public class KThread {
 	}
 
 	/**
-	 * Allocate a new KThread.
+	 * Hello Allocate a new KThread.
 	 * 
 	 * @param target the object whose <tt>run</tt> method is called.
 	 */
