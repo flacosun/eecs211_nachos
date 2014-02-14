@@ -2,9 +2,14 @@ package nachos.threads;
 
 import nachos.machine.*;
 
+import java.util.LinkedList;
+import java.util.List;
 import java.util.TreeSet;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Queue;
+import java.util.Comparator;
+import java.util.concurrent.PriorityBlockingQueue;
 
 /**
  * A scheduler that chooses threads based on their priorities.
@@ -129,9 +134,32 @@ public class PriorityScheduler extends Scheduler {
 	 * A <tt>ThreadQueue</tt> that sorts threads by priority.
 	 */
 	protected class PriorityQueue extends ThreadQueue {
+		/*-----------------------------------------Xiangqing Sun's code starts here-----------------------------------------------------*/
 		PriorityQueue(boolean transferPriority) {
 			this.transferPriority = transferPriority;
 		}
+		
+		public int getEffectivePriority(){
+			Lib.assertTrue(Machine.interrupt().disabled());
+			if(dirty){
+				effectivePriority = priorityMinimum;
+				for (ThreadState i : waitQueue){
+					effectivePriority = max(effectivePriority, i.getEffectivePriority());
+				}
+				dirty = false;
+			}
+			return effectivePriority;
+		}
+		/*An implement using Java PriorityQue
+		public int getEffectivePriority(){
+			Lib.assertTrue(Machine.interrupt().disabled());
+			if(dirty){
+				effectivePriority = waitQueue.peak();
+				dirty = false;
+			}
+			return effectivePriority;
+		}
+		 */
 
 		public void waitForAccess(KThread thread) {
 			Lib.assertTrue(Machine.interrupt().disabled());
@@ -139,15 +167,45 @@ public class PriorityScheduler extends Scheduler {
 		}
 
 		public void acquire(KThread thread) {
-			Lib.assertTrue(Machine.interrupt().disabled());
-			getThreadState(thread).acquire(this);
+			Lib.assertTrue(Machine.interrupt().disabled());	
+			if(holder != null && transferPriority){
+				//TODO: remove queue from holder's list
+			}
+			ThreadState state = getThreadState(thread);
+			state.acquire(this);
+			holder = state;
 		}
-
+		
+		public void setDirty(){
+			if(!transferPriority)
+				return;
+			dirty = true;
+			if(this.holder != null)
+				this.holder.setDirty();
+			
+		}
 		public KThread nextThread() {
 			Lib.assertTrue(Machine.interrupt().disabled());
-			// implement me
-			return null;
+			if(holder != null && transferPriority){
+				//TODO: remove queue from holder's list
+			}
+			if(waitQueue.isEmpty()) return null;
+			ThreadState next = pickNextThread();
+			waitQueue.remove(next);
+			return next.thread;
 		}
+		
+		/*An implement using Java PriorityQue
+		public void acquire(KThread thread) {
+			Lib.assertTrue(Machine.interrupt().disabled());	
+			if(holder != null && transferPriority){
+				//TODO: remove queue from holder's list
+			}
+			ThreadState state = getThreadState(thread);
+			state.acquire(this);
+			holder = state;
+		}
+		*/
 
 		/**
 		 * Return the next thread that <tt>nextThread()</tt> would return,
@@ -156,8 +214,13 @@ public class PriorityScheduler extends Scheduler {
 		 * @return the next thread that <tt>nextThread()</tt> would return.
 		 */
 		protected ThreadState pickNextThread() {
-			// implement me
-			return null;
+			ThreadState ret = null;
+			for(ThreadState i : waitQueue){
+				if(ret == null || i.getEffectivePriority() > ret.getEffectivePriority()){
+					ret = i;
+				}
+			}
+			return ret;
 		}
 
 		public void print() {
@@ -170,7 +233,13 @@ public class PriorityScheduler extends Scheduler {
 		 * threads to the owning thread.
 		 */
 		public boolean transferPriority;
+		private boolean dirty = false;
+		public ThreadState holder;
+		public int effectivePriority;
+		//private java.util.PriorityQueue<ThreadState> waitQueue = new java.util.PriorityQueue<ThreadState>();
+		public List<ThreadState> waitQueue = new LinkedList<ThreadState>();
 	}
+	/*-------------------------------------------end of Xiangqing's Code----------------------------------------------------------*/
 
 	/**
 	 * The scheduling state of a thread. This should include the thread's
@@ -254,11 +323,24 @@ public class PriorityScheduler extends Scheduler {
 		public void acquire(PriorityQueue waitQueue) {
 			// implement me
 		}
+			
 
 		/** The thread with which this object is associated. */
 		protected KThread thread;
 
 		/** The priority of the associated thread. */
 		protected int priority;
+	}
+	
+	/**
+	 * return the higher one of two priorities
+	 * @param priority1
+	 * @param priority2
+	 * @return the higher one of priorty1 and priority2
+	 */
+
+	public int max(int priority1, int priority2) {
+		return priority1 > priority2? 
+				priority1: priority2;
 	}
 }
