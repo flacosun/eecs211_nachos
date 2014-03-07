@@ -2,9 +2,13 @@ package nachos.userprog;
 
 import nachos.machine.*;
 import nachos.threads.*;
-import nachos.userprog.*;
 
 import java.io.EOFException;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Map;
 
 /**
  * Encapsulates the state of a user process that is not contained in its user
@@ -27,6 +31,21 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+		//Xiangqing's code
+		fileList = new LinkedList<OpenFile>();
+		childList = new LinkedList<UserProcess>();
+		exitStatusMap = new HashMap<Integer, Integer>();
+		exitStatusMapLock = new Lock();
+		//Allocate process ID
+		processIDLock.acquire();
+		processID = processIDCounter;
+		//Add processIDCounter by 1;
+		if(processIDCounter == Integer.MAX_VALUE)
+			processIDCounter = 1;
+		else
+			processIDCounter++;
+		processIDLock.release();
+		//Xiangqing's code ends
 	}
 
 	/**
@@ -306,6 +325,7 @@ public class UserProcess {
 	/**
 	 * Release any resources allocated by <tt>loadSections()</tt>.
 	 */
+	
 	protected void unloadSections() {
 	}
 
@@ -332,16 +352,138 @@ public class UserProcess {
 		processor.writeRegister(Processor.regA1, argv);
 	}
 
+	/* ************************************Xiangqing's Code**************************/
 	/**
 	 * Handle the halt() system call.
 	 */
 	private int handleHalt() {
-
+		if (this.processID != 0){
+			Lib.debug(dbgProcess, "handleHalt: Can't halt machine, this process is not the root process.");
+			return 0;
+		}
 		Machine.halt();
 
 		Lib.assertNotReached("Machine.halt() did not halt machine!");
 		return 0;
 	}
+	/**
+	 * Handle the exit() system call.
+	 */
+	private void handleExit(int exitValue) {
+		parent.childList.remove(this);
+		unloadSections();
+		if (parent != null)
+		{
+			parent.exitStatusMapLock.acquire();
+			parent.exitStatusMap.put(processID, exitValue);
+			parent.exitStatusMapLock.release();
+		}
+		for(int i = 0; i < childList.size(); i++){
+			UserProcess child = childList.get(i);
+			child.parent = null;
+		}
+		exitStatusMap.clear();
+		childList.clear();
+		if (processID == 0){
+			Kernel.kernel.terminate();
+		}
+		else{
+			UThread.finish();
+		}
+	}
+	/**
+	 * Handle the join() system call.
+	 */
+	private int handleJoin(int pid, int statusVaddr) {
+		UserProcess child = null;
+		int numOfChild = childList.size();
+		for (int i = 0; i < numOfChild; i++){
+			if(childList.get(i).processID == pid){
+				child = childList.get(i);
+			}
+		}
+		if(child == null) {
+			Lib.debug(dbgProcess, "handleJoin Error: no child found with specified Process ID");
+			return -1;
+		}
+		child.thread.join();
+		childList.remove(child);
+		child.parent = null;
+		exitStatusMapLock.acquire();
+		if(!exitStatusMap.containsKey(child.processID)){
+			Lib.debug(dbgProcess, "handleJoin Error: Can not get exit status of child process");
+			return -1;
+		}
+		int exitStatus = exitStatusMap.get(child.processID).intValue();
+		exitStatusMap.remove(child.processID);
+		exitStatusMapLock.release();
+		
+		if(exitStatus == unhandledException){
+			return 0; 
+		}
+		byte[] buffer = new byte[4];
+		Lib.bytesFromInt(buffer, 0, exitStatus);
+		int numOfBytesTransferred = writeVirtualMemory(statusVaddr, buffer);
+		if (numOfBytesTransferred == 4){
+			return 1; 
+		}
+		else{
+			Lib.debug(dbgProcess, "handleJoin Error: Failed to write status");
+			return -1;
+		}
+	}
+	/**
+	 * Handle the exec() system call.
+	 */
+	private int handleExec(int fileVirtualAddress, int numOfArg, int argOffset) {
+		//bullet proof the exec
+		if(fileVirtualAddress < 0){
+			Lib.debug(dbgProcess, "Exec Error: Virtual Address is illegal");
+			return -1;
+		}
+		String fileAddress = readVirtualMemoryString(fileVirtualAddress, 256);
+		if(fileAddress == null){
+			Lib.debug(dbgProcess, "Exec Error: No file address found in momery");
+			return -1;
+		}
+		if(!fileAddress.endsWith("coff")&&!fileAddress.endsWith("COFF")){
+			Lib.debug(dbgProcess, "Exec Error: This file is not a coff file");
+			return -1;
+		}
+		if (numOfArg < 0){
+			Lib.debug(dbgProcess, "Exec Error: Number of arguments must be non-negative");
+			return -1;
+		}
+		String[] arguments = new String[numOfArg];
+		for(int i=0; i < numOfArg; i++ ){
+			byte[] buffer = new byte[4];
+			int numOfBytesTransferred = readVirtualMemory(argOffset + (i*4), buffer);
+			if (numOfBytesTransferred != 4){
+				Lib.debug(dbgProcess, "Exec Error: Failed to read agument address");
+				return -1;
+			}
+			int argVaddr = Lib.bytesToInt(buffer, 0);
+			String argument = readVirtualMemoryString(argVaddr, 256);
+			if (argument == null){
+				Lib.debug(dbgProcess, "Exec Error: Failed to read argument");
+				return -1;
+			}
+			arguments[i] = argument;
+		}
+		//execute the process by calling execute() method
+		UserProcess child = UserProcess.newUserProcess();
+		if (child.execute(fileAddress, arguments)){
+			this.childList.add(child);
+			child.parent = this;
+			return child.processID;
+		}else{
+			Lib.debug(dbgProcess, "Exec Error: Failed to execute the coff");
+			return -1;
+		} 	
+	}
+	
+
+	/* ************************************Xiangqing's Code ends**************************/
 
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
@@ -412,14 +554,20 @@ public class UserProcess {
 	public int handleSyscall(int syscall, int a0, int a1, int a2, int a3) {
 		switch (syscall) {
 		case syscallHalt:
-			return handleHalt();
-
+			handleHalt(); break;
+		case syscallExec:
+			handleExec(a0, a1, a2); break;
+		case syscallJoin:
+			handleJoin(a0, a1); break;
+		case syscallExit:
+			handleExit(a0); break;
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
 			Lib.assertNotReached("Unknown system call!");
 		}
 		return 0;
 	}
+
 
 	/**
 	 * Handle a user exception. Called by <tt>UserKernel.exceptionHandler()</tt>
@@ -445,7 +593,10 @@ public class UserProcess {
 		default:
 			Lib.debug(dbgProcess, "Unexpected exception: "
 					+ Processor.exceptionNames[cause]);
-			Lib.assertNotReached("Unexpected exception");
+			//Xiangqing's code
+			handleExit(unhandledException);
+			//Lib.assertNotReached("Unexpected exception");
+			//Xiangqing's code ends
 		}
 	}
 
@@ -460,7 +611,36 @@ public class UserProcess {
 
 	/** The number of pages in the program's stack. */
 	protected final int stackPages = 8;
+	
+	/************************* Xiangqing's Code**************************/
+	//public static List<UserProcess> runningList = new LinkedList<UserProcess>();
+	/** Unique ID of this process*/
+	private int processID;
+	
+	/** The Counter of processID*/
+	protected static int processIDCounter = 0;
+	protected static Lock processIDLock = new Lock();
+	
+	/** The list of OpenFiles*/
+	protected List<OpenFile> fileList;
+	
+	/** The list of child processes*/
+	protected List<UserProcess> childList;
 
+	/** The parent process*/
+	protected UserProcess parent;
+	
+	/** The thread of this process*/
+	protected UThread thread;
+	
+	/** The map of child process ID to its exit status*/
+	protected Map<Integer, Integer> exitStatusMap;
+	protected Lock exitStatusMapLock;
+	protected static final int unhandledException = -38429057;
+	//public int exitStatus;
+	//public Semaphore joinSemaphore = new Semaphore();
+	/************************* Xiangqing's Code ends*********************/
+	
 	private int initialPC, initialSP;
 
 	private int argc, argv;

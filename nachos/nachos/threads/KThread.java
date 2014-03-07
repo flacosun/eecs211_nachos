@@ -1,7 +1,8 @@
 package nachos.threads;
 
 import nachos.machine.*;
-
+//My CODE
+import java.util.LinkedList;
 /**
  * A KThread is a thread that can be used to execute Nachos kernel code. Nachos
  * allows multiple threads to run concurrently.
@@ -44,8 +45,19 @@ public class KThread {
 	 * 
 	 * @return the current thread.
 	 */
+//---------------------------------Harsh Variable Declared -------------------------------//
+	// After task 4 is completed I got to learn the Semaphore class. LOL
+	// A Semaphore can be used inside the join method. with initial value 0. 
+	// Upon termination of the thread, the semaphore will be incremented. 
+	// The join method will cause the current thread to sleep until the semaphore becomes a non-zero value,
+	// it will decrement it, then increment it again. 
+	private Semaphore ThreadJoinSMP = new Semaphore(0);
+	
+	
+	
 	public static KThread currentThread() {
 		Lib.assertTrue(currentThread != null);
+		// System.out.println(currentThread); // MY CODE
 		return currentThread;
 	}
 
@@ -168,6 +180,7 @@ public class KThread {
 	private void runThread() {
 		begin();
 		target.run();
+		ThreadJoinSMP.V(); // Harsh Code
 		finish();
 	}
 
@@ -284,9 +297,24 @@ public class KThread {
 		Lib.debug(dbgThread, "Joining to thread: " + toString());
 
 		Lib.assertTrue(this != currentThread);
-
+		
+//--------------- HARSH  CODE -----------------------------------------------------------------
+		
+		// The current thread will wait for this thread to finish
+		// If this thread is already finished, the method will return immediately
+		
+		// Condition to check before : 
+		// Join must not be called upon the current thread
+		// Join must not be called more than once on a particular thread.
+		
+		// The joined thread will have completed execution.
+		//System.out.println("Waiting..."); // code for testing
+		
+		ThreadJoinSMP.P();
+		ThreadJoinSMP.V();
+		
+		//System.out.println("....Done ");
 	}
-
 	/**
 	 * Create the idle thread. Whenever there are no threads ready to be run,
 	 * and <tt>runNextThread()</tt> is called, it will run the idle thread. The
@@ -400,7 +428,7 @@ public class KThread {
 			for (int i = 0; i < 5; i++) {
 				System.out.println("*** thread " + which + " looped " + i
 						+ " times");
-				//currentThread.yield();
+				currentThread.yield();
 			}
 		}
 
@@ -412,9 +440,11 @@ public class KThread {
 	 */
 	public static void selfTest() {
 		Lib.debug(dbgThread, "Enter KThread.selfTest");
-		new PingTest(0).run();
-		new KThread(new PingTest(2)).setName("forked thread").fork();
+		
+		new PingTest(0).run(); // Line changed , moved up
+		new KThread(new PingTest(2)).setName("forked thread").fork(); // Line changed for 2-1-2-1 pattern
 		new KThread(new PingTest(1)).setName("forked thread").fork();
+		//new PingTest(0).run();
 	}
 
 	private static final char dbgThread = 't';
@@ -465,4 +495,15 @@ public class KThread {
 	private static KThread toBeDestroyed = null;
 
 	private static KThread idleThread = null;
+	
+	/*
+	 * Testing Of KThread.join method
+	 *
+	
+	public static void Test1(){
+		KThreadTest1.runTest();
+		//KthreadTest2.runTest();
+		
+	*/	
 }
+

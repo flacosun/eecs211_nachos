@@ -1,5 +1,8 @@
 package nachos.userprog;
 
+import java.util.LinkedList;
+import java.util.List;
+
 import nachos.machine.*;
 import nachos.threads.*;
 import nachos.userprog.*;
@@ -23,14 +26,13 @@ public class UserKernel extends ThreadedKernel {
 		super.initialize(args);
 
 		console = new SynchConsole(Machine.console());
-
 		Machine.processor().setExceptionHandler(new Runnable() {
 			public void run() {
 				exceptionHandler();
 			}
 		});
 	}
-
+	
 	/**
 	 * Test the console device.
 	 */
@@ -113,4 +115,12 @@ public class UserKernel extends ThreadedKernel {
 
 	// dummy variables to make javac smarter
 	private static Coff dummy1 = null;
+	
+	
+	/* ********************************Xiangqing's Code********************************/
+	///** A list of running process */
+	
+	//public static List<UserProcess> runningProcess = new LinkedList<UserProcess>();
+	/* ********************************Xiangqing's Code Ends****************************/
+	
 }
