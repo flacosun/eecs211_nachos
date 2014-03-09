@@ -81,7 +81,7 @@ public class LotteryScheduler extends PriorityScheduler {
 	}
 	
 	@Override
-	protected ThreadState getThreadState(KThread thread) {
+	protected LotteryThreadState getThreadState(KThread thread) {
 		if (thread.schedulingState == null)
 			thread.schedulingState = new LotteryThreadState(thread);
 
@@ -103,12 +103,16 @@ public class LotteryScheduler extends PriorityScheduler {
 				}
 				dirty = false;
 			}
+			else{
+				effectivePriority = this.waitQueue.size();
+			}
 			return effectivePriority;
 		}
 		
 		@Override
 		protected KThread pickNextThread() {
 			int random = 1 + (int)(Math.random() * ((getEffectivePriority() - 1) + 1));
+			Lib.debug('t', "Random number is" + random);
 			for(KThread i : waitQueue){
 				random -= getThreadState(i).getEffectivePriority();
 				if(random <= 0){
@@ -140,7 +144,7 @@ public class LotteryScheduler extends PriorityScheduler {
 				 	 this.effective = priorityDefault;
 					 for (Iterator<ThreadQueue> it = Resource_list.iterator(); it.hasNext();)
 					 {
-						 PriorityQueue pq = (PriorityQueue)(it.next());
+						 LotteryQueue pq = (LotteryQueue)(it.next());
 						 this.effective += pq.getEffectivePriority();
 			         }
 		        }

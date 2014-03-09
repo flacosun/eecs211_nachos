@@ -251,7 +251,6 @@ public class PriorityScheduler extends Scheduler {
 		 */
 		public ThreadState(KThread thread) {
 			this.thread = thread;
-
 			setPriority(priorityDefault);
 		}
 

@@ -2,7 +2,6 @@ package nachos.userprog;
 
 import nachos.machine.*;
 import nachos.threads.*;
-import nachos.userprog.*;
 
 /**
  * Provides a simple, synchronized interface to the machine's console. The
@@ -103,6 +102,8 @@ public class SynchConsole {
 	private boolean charAvailable = false;
 
 	private SerialConsole console;
+	
+	private Lock writelock2 = new Lock();
 
 	private Lock readLock = new Lock();
 
@@ -141,11 +142,14 @@ public class SynchConsole {
 		}
 
 		public int write(byte[] buf, int offset, int length) {
+			
 			if (!canWrite)
 				return 0;
+			writelock2.acquire();
 
 			for (int i = 0; i < length; i++)
 				SynchConsole.this.writeByte(buf[offset + i]);
+			writelock2.release();
 
 			return length;
 		}
