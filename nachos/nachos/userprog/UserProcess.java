@@ -34,9 +34,13 @@ public class UserProcess {
 	    file[STDIN].pos = 0;
 	    Lib.assertTrue(file[STDIN] != null); 
 	    OpenFile opn = UserKernel.fileSystem.open("out", false); 
+	    //OpenFile opn = UserKernel.fileSystem.open("out", true); 
+	    file[STDOUT].file = UserKernel.console.openForWriting(); 
+	    file[STDOUT].pos = 0;
+	    Lib.assertTrue(file[STDOUT] != null); 
 
 	    int var = empty(); 
-	    System.out.println("*** File handle: " + var); 
+	    //System.out.println("*** File handle: " + var); 
 	    file[var].file = opn;
 	    file[var].pos = 0; 
 	    //--
@@ -84,7 +88,8 @@ public class UserProcess {
 		if (!load(name, args))
 			return false;
 
-		new UThread(this).setName(name).fork();
+		this.thread = new UThread(this);
+		this.thread.setName(name).fork();
 
 		return true;
 	}
@@ -180,29 +185,59 @@ public class UserProcess {
 	 * array.
 	 * @return the number of bytes successfully transferred.
 	 */
-	public int readVirtualMemory(int Newvaddr, byte[] data, int offset, int length) {
-		Lib.assertTrue(offset >= 0 && length >= 0
-				&& offset + length <= data.length);
-		
-		int vaddr = Newvaddr;
+	public int readVirtualMemory(int vaddr, byte[] data, int offset, int length) {
+		Lib.assertTrue(offset >= 0 && length >= 0 && offset+length <= data.length);
+
+		//make sure that virtual address is valid for this process' virtual address space == Fred 1 
+		// Check for less than memory block .. and mmore than memory blocks
+		if (vaddr < 0)
+			vaddr = 0;
+		if (length > nachos.machine.Processor.makeAddress(numPages-1, pageSize-1) - vaddr)
+			length = nachos.machine.Processor.makeAddress(numPages-1, pageSize-1) - vaddr;
+
 		byte[] memory = Machine.processor().getMemory();
 
-		// for now, just assume that virtual addresses equal physical addresses
-		while(length != 0){
-			int phyAddr = mapVirtualToPhysicalAddress(vaddr);
-			if (phyAddr < 0 || phyAddr >= memory.length){
-				handleException(Processor.exceptionAddressError);
+		int firstVirtualBlock = nachos.machine.Processor.pageFromAddress(vaddr);
+		int lastVirtualBlock = nachos.machine.Processor.pageFromAddress(vaddr+length);
+		int numOfBytesTransferred = 0;
+		for (int i=firstVirtualBlock; i<=lastVirtualBlock; i++){
+			if (!pageTable[i].valid)
+				break; 
+			//stop reading, return numBytesTransferred for whatever we've written so far
+			int firstVirtualBlkAdd = nachos.machine.Processor.makeAddress(i, 0);
+			int lastVirtualBlkAdd = nachos.machine.Processor.makeAddress(i, pageSize-1);
+			int offset1;
+			int offset2;
+			//virtual page is in the middle, copy entire page (most common case)
+			if (vaddr <= firstVirtualBlkAdd && vaddr+length >= lastVirtualBlkAdd){
+				offset1 = 0;
+				offset2 = pageSize - 1;
 			}
-			
-			int amount = Math.min(length, Processor.makeAddress(Processor.pageFromAddress(phyAddr)+1, 0) - phyAddr);                     ///
-			System.arraycopy(memory, phyAddr, data, offset, amount);
-			
-			vaddr += amount;
-			offset += amount;
-			length -= amount;
-		}
-		return vaddr - Newvaddr;
+			//virtual page is first to be transferred
+			else if (vaddr > firstVirtualBlkAdd && vaddr+length >= lastVirtualBlkAdd){
+				offset1 = vaddr - firstVirtualBlkAdd;
+				offset2 = pageSize - 1;
+			}
+			//virtual page is last to be transferred
+			else if (vaddr <= firstVirtualBlkAdd && vaddr+length < lastVirtualBlkAdd){
+				offset1 = 0;
+				offset2 = (vaddr + length) - firstVirtualBlkAdd;
+			}
+			//only need inner chunk of a virtual page (special case)
+			else { 
+				//(vaddr > firstVirtAddress && vaddr+length < lastVirtAddress)
+				offset1 = vaddr - firstVirtualBlkAdd;
+				offset2 = (vaddr + length) - firstVirtualBlkAdd;
+			}
+			int firstPhysAddress = nachos.machine.Processor.makeAddress(pageTable[i].ppn, offset1);
+			//int lastPhysAddress = Machine.processor().makeAddress(pageTable[i].ppn, offset2);
+			System.arraycopy(memory, firstPhysAddress, data, offset+numOfBytesTransferred, offset2-offset1);
+			numOfBytesTransferred += (offset2-offset1);
+			pageTable[i].used = true;
+		}		
+		return numOfBytesTransferred;
 	}
+
 
 	/**
 	 * Transfer all data from the specified array to this process's virtual
@@ -230,28 +265,57 @@ public class UserProcess {
 	 * memory.
 	 * @return the number of bytes successfully transferred.
 	 */
-	public int writeVirtualMemory(int Newvaddr, byte[] data, int offset, int length) {
-		Lib.assertTrue(offset >= 0 && length >= 0
-				&& offset + length <= data.length);
+	public int writeVirtualMemory(int vaddr, byte[] data, int offset,int length) {
+		Lib.assertTrue(offset >= 0 && length >= 0 && offset+length <= data.length);
 
-		int vaddr = Newvaddr;
 		byte[] memory = Machine.processor().getMemory();
 
-		while(length != 0){
-			int phyAddr = mapVirtualToPhysicalAddress(vaddr);
-			if (phyAddr < 0 || phyAddr >= memory.length){
-				handleException(Processor.exceptionAddressError);
+		//make sure that virtual address is valid for this process' virtual address space
+		if (vaddr < 0)
+			vaddr = 0;
+		if (length > nachos.machine.Processor.makeAddress(numPages-1, pageSize-1) - vaddr)
+			length = Processor.makeAddress(numPages-1, pageSize-1) - vaddr;
+
+		int firstVirtualBlock = Processor.pageFromAddress(vaddr);
+		int lastVirtualBlock = Processor.pageFromAddress(vaddr+length);
+		int numOfBytesTransferred = 0;
+		for (int i=firstVirtualBlock; i<=lastVirtualBlock; i++){
+			if (!pageTable[i].valid || pageTable[i].readOnly)
+				break; //stop writing, return numBytesTransferred for whatever we've written so far
+			int firstVirtualBlkAdd = Processor.makeAddress(i, 0);
+			int lastVirtualBlkAdd = Processor.makeAddress(i, pageSize-1);
+			int offset1;
+			int offset2;
+			//virtual page is in the middle, copy entire page (most common case)
+			if (vaddr <= firstVirtualBlkAdd && vaddr+length >= lastVirtualBlkAdd){
+				offset1 = 0;
+				offset2 = pageSize - 1;
 			}
-			
-			int amount = Math.min(length, Processor.makeAddress(Processor.pageFromAddress(phyAddr)+1, 0) - phyAddr);
-			System.arraycopy(data, offset, memory, phyAddr, amount);
-			
-			vaddr += amount;
-			offset += amount;
-			length -= amount;
+			//virtual page is first to be transferred
+			else if (vaddr > firstVirtualBlkAdd && vaddr+length >= lastVirtualBlkAdd){
+				offset1 = vaddr - firstVirtualBlkAdd;
+				offset2 = pageSize - 1;
+			}
+			//virtual page is last to be transferred
+			else if (vaddr <= firstVirtualBlkAdd && vaddr+length < lastVirtualBlkAdd){
+				offset1 = 0;
+				offset2 = (vaddr + length) - firstVirtualBlkAdd;
+			}
+			//only need inner chunk of a virtual page (special case)
+			else { //(vaddr > firstVirtAddress && vaddr+length < lastVirtAddress)
+				offset1 = vaddr - firstVirtualBlkAdd;
+				offset2 = (vaddr + length) - firstVirtualBlkAdd;
+			}
+			int firstPhysAddress = Processor.makeAddress(pageTable[i].ppn, offset1);
+			//int lastPhysAddress = Machine.processor().makeAddress(pageTable[i].ppn, offset2);
+			System.arraycopy(data, offset+numOfBytesTransferred, memory, firstPhysAddress, offset2-offset1);
+			numOfBytesTransferred += (offset2-offset1);
+			pageTable[i].used = pageTable[i].dirty = true;
 		}
-		return vaddr - Newvaddr;
+
+		return numOfBytesTransferred;
 	}
+
 	/**
 	 * Load the executable with the specified name into this process, and
 	 * prepare to pass it the specified arguments. Opens the executable, reads
@@ -602,22 +666,22 @@ public class UserProcess {
     	    } 
     private int read(int par1, int par2, int par3)
     {
-    	Lib.debug(dbgProcess, "read()"); 
+    	//Lib.debug(dbgProcess, "read()"); 
     	         
     	        int handle = par1;
     	        int vaddr = par2; 
     	        int bufsize = par3; 
 
-    	Lib.debug(dbgProcess, "handle: " + handle); 
-    	Lib.debug(dbgProcess, "address: " + vaddr); 
-    	Lib.debug(dbgProcess, "size: " + bufsize); 
+    	//Lib.debug(dbgProcess, "handle: " + handle); 
+    	//Lib.debug(dbgProcess, "address: " + vaddr); 
+    	//Lib.debug(dbgProcess, "size: " + bufsize); 
     	        if (handle < 0 || handle > MAX 
     	                || file[handle].file == null) 
     	            return -1; 
 
     	        fileclass fd = file[handle]; 
     	        byte[] buffer = new byte[bufsize]; 
-    	        int ret = fd.file.read(fd.pos, buffer, 0, bufsize); 
+    	        int ret = fd.file.read(buffer, 0, bufsize); 
 
     	        if (ret < 0)
     	        {  
@@ -651,7 +715,7 @@ public class UserProcess {
     	        byte[] buffer = new byte[bufsize]; 
 
     	        int tot_byte = readVirtualMemory(vaddr, buffer); 
-    	        int ret = fd.file.write(fd.pos, buffer, 0, tot_byte); 
+    	        int ret = fd.file.write(buffer, 0, tot_byte); 
 
     	        if (ret < 0) 
     	        {  
@@ -695,13 +759,24 @@ public class UserProcess {
     	    	 Lib.debug(dbgProcess, "file: " + f_name); 
 
     	    	         int var = files(f_name); 
-    	    	         if (var < 0) 
+    	    	         /*Xiangqing's fix
+    	    	          Code Before fix:
+    	    	          
+    	    	          if (var < 0) 
     	    	         { 
     	    	   
-    	    	             ret = UserKernel.fileSystem.remove(file[var].filename); 
+    	    	             ret = UserKernel.fileSystem.remove(file[var].name); 
     	    	         } 
     	    	         else
     	    	         {
+    	    	              file[var].removes = true; 
+    	    	         }
+    	    	          */
+    	    	          
+    	    	         ret = UserKernel.fileSystem.remove(f_name); 
+    	    	         if (var >= 0 && ret)
+    	    	         {
+    	    	        	 
     	    	              file[var].removes = true; 
     	    	         }
     	    	         return ret ? 0 : -1; 
@@ -852,7 +927,8 @@ public class UserProcess {
 	{ 
         for (int i = 0; i < MAX; i++) 
         { 
-            if (file[i].filename == filename) 
+        	Lib.debug(dbgProcess, file[i].filename);
+            if (file[i].filename.equals(filename)) 
                 return i; 
         }
 

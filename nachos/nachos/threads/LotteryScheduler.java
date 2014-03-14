@@ -1,11 +1,6 @@
 package nachos.threads;
 
 import nachos.machine.*;
-import nachos.threads.PriorityScheduler.PriorityQueue;
-import nachos.threads.PriorityScheduler.ThreadState;
-
-import java.util.TreeSet;
-import java.util.HashSet;
 import java.util.Iterator;
 
 /**
@@ -44,6 +39,11 @@ public class LotteryScheduler extends PriorityScheduler {
 	 */
 	public ThreadQueue newThreadQueue(boolean transferPriority) {
 		return new LotteryQueue(transferPriority);
+	}
+	@Override
+	public void setPriority(KThread thread, int priority) {
+		Lib.assertTrue(Machine.interrupt().disabled());
+		getThreadState(thread).setPriority(priority);
 	}
 	
 	@Override
@@ -111,8 +111,8 @@ public class LotteryScheduler extends PriorityScheduler {
 		
 		@Override
 		protected KThread pickNextThread() {
-			int random = 1 + (int)(Math.random() * ((getEffectivePriority() - 1) + 1));
-			Lib.debug('t', "Random number is" + random);
+			int random = 1 + (int)(Math.random() * getEffectivePriority());
+			Lib.debug('t', "Random number is " + random);
 			for(KThread i : waitQueue){
 				random -= getThreadState(i).getEffectivePriority();
 				if(random <= 0){
@@ -141,15 +141,17 @@ public class LotteryScheduler extends PriorityScheduler {
 		   
 			 if(dirty)
 				{
-				 	 this.effective = priorityDefault;
+				 	 this.effective = this.priority;
 					 for (Iterator<ThreadQueue> it = Resource_list.iterator(); it.hasNext();)
 					 {
 						 LotteryQueue pq = (LotteryQueue)(it.next());
 						 this.effective += pq.getEffectivePriority();
+						 
 			         }
 		        }
 					 
 			        dirty=false;
+			        Lib.debug('t', this.thread.getName() + ": " +this.effective +"**********");
 			      //code ends here
 			        return this.effective;
 		  

@@ -141,6 +141,7 @@ public class SynchConsole {
 			return i;
 		}
 
+		
 		public int write(byte[] buf, int offset, int length) {
 			
 			if (!canWrite)

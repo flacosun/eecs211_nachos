@@ -179,8 +179,10 @@ public class PriorityScheduler extends Scheduler {
 		}
 		
 		public void setFlag(){
+			/*
 			if(!transferPriority)
 				return;
+			*/	
 			dirty = true;
 			if(holder != null)
 				getThreadState(holder).setFlag();

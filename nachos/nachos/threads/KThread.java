@@ -180,7 +180,6 @@ public class KThread {
 	private void runThread() {
 		begin();
 		target.run();
-		ThreadJoinSMP.V(); // Harsh Code
 		finish();
 	}
 
@@ -213,7 +212,7 @@ public class KThread {
 
 		Lib.assertTrue(toBeDestroyed == null);
 		toBeDestroyed = currentThread;
-
+		currentThread.ThreadJoinSMP.V(); // Harsh Code, Xiangqing's fix: This statement should've not been put between run() and finish(). 
 		currentThread.status = statusFinished;
 
 		sleep();
