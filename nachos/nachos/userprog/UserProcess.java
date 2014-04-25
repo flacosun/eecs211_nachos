@@ -147,7 +147,7 @@ public class UserProcess {
 	 */
 	// Code Starts
 	// Getting a map from Virtual(logical Address) to Physical address space.
-	private int mapVirtualToPhysicalAddress(int address){
+	protected int mapVirtualToPhysicalAddress(int address){
 		int virtualPage = Processor.pageFromAddress(address);
 		int offset = Processor.offsetFromAddress(address);
 		
@@ -963,7 +963,7 @@ public class UserProcess {
 	protected TranslationEntry[] pageTable;
 
 	/** The number of contiguous pages occupied by the program. */
-	protected int numPages;
+	public int numPages;
 
 	/** The number of pages in the program's stack. */
 	protected final int stackPages = 8;
@@ -971,7 +971,7 @@ public class UserProcess {
 	/************************* Xiangqing's Code**************************/
 	//public static List<UserProcess> runningList = new LinkedList<UserProcess>();
 	/** Unique ID of this process*/
-	private int processID;
+	public int processID;
 	
 	/** The Counter of processID*/
 	protected static int processIDCounter = 0;
@@ -1065,6 +1065,5 @@ public class UserProcess {
 	private int argc, argv;
 
 	private static final int pageSize = Processor.pageSize;
-
 	private static final char dbgProcess = 'a';
 }
